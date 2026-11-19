@@ -52,6 +52,8 @@ export function parseSchedule(rows, year) {
       course: r.course,
       location: r.location,
       tier: Number(r.tiers ?? r.tier ?? 3),
+      // More than one course listed (e.g. "Pebble Beach Golf Links, Spyglass Hill") => no FRL that week.
+      multiCourse: /,/.test(String(r.course || '')),
       start,
       end,
     };
@@ -70,6 +72,13 @@ export function currentWeek(tournaments, todayISO) {
 
 export function weekFormat(t, rec) {
   return formatFor(t, rec && rec.rounds ? Number(rec.rounds) : null);
+}
+
+// FRL runs unless the tournament is multi-course. Commissioner can force it: rec.frl = 'on' | 'off'.
+export function frlActive(t, rec) {
+  if (rec && rec.frl === 'on') return true;
+  if (rec && rec.frl === 'off') return false;
+  return !t.multiCourse;
 }
 
 export function stakeFor(t, rec, config) {
@@ -319,12 +328,13 @@ export function computeResults(lb, fmt) {
   const pick = (p) => ({ name: p.name, key: p.key, id: p.id });
 
   // First round: leaders among those who finished R1.
-  const r1 = players.filter((p) => p.rounds[0].strokes != null && p.rounds[0].holes >= 18);
+  const r1 = players.filter((p) => p.rounds[0].toPar != null && p.rounds[0].holes >= 18);
   const r1Live = players.filter((p) => p.rounds[0].toPar != null);
   const r1Done = lb.state === 'post' || lb.period >= 2;
   const pool = r1Done ? r1 : r1Live;
   if (pool.length) {
-    const scoreOf = (p) => (r1Done ? p.rounds[0].strokes : p.rounds[0].toPar);
+    // Always compare to par, never strokes: multi-course events (RSM, AmEx, Pebble) have different pars.
+    const scoreOf = (p) => p.rounds[0].toPar;
     const best = Math.min(...pool.map(scoreOf));
     res.r1Leaders = pool.filter((p) => scoreOf(p) === best).map(pick);
     if (r1Done) { res.frlFinal = true; res.frlLeaders = res.r1Leaders; }
@@ -427,7 +437,7 @@ export function computeSeason(tournaments, records, config) {
       golfWinner: res.winner ? res.winner.name : null, winnerDegen: null,
       golfFrl: res.frlLeaders.map((p) => p.name), frlDegens: [],
       dfl: res.dfl.map((p) => p.name), dflDegens: [],
-      final: res.final, frlFinal: res.frlFinal, drafted, frlRolled: false,
+      final: res.final, frlFinal: res.frlFinal, drafted, frlRolled: false, noFrl: !frlActive(t, rec),
     };
 
     if (drafted && res.final && res.winner) {
@@ -437,7 +447,11 @@ export function computeSeason(tournaments, records, config) {
       w.winnerDegen = 'Undrafted';
     }
 
-    if (drafted && res.frlFinal) {
+    if (w.noFrl) {
+      // Multi-course week: no FRL. The pot carries to next week unchanged (no +$1).
+      w.golfFrl = [];
+      frlStake = weekFrl;
+    } else if (drafted && res.frlFinal) {
       const owners = res.frlLeaders.map((p) => own.reg.get(p.key));
       if (owners.length && owners.every(Boolean)) {
         settle('frl', weekFrl, owners);

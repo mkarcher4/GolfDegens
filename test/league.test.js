@@ -98,7 +98,7 @@ test('MMGW best 4 of 6, CUT when fewer than 4 alive', () => {
 
 test('season money: wins, undrafted winner, FRL rollover and split, DFL', () => {
   const degens = cfg.degens;
-  const t = schedule.slice(0, 3).concat(schedule.find((x) => x.name === 'TOUR Championship'));
+  const t = [schedule[5], schedule[3], schedule[4]].map((x, i) => ({ ...x, week: i + 1 })).concat(schedule.find((x) => x.name === 'TOUR Championship'));
   const mkPicks = (pairs) => pairs.map(([degen, name], i) => ({ pick: i + 1, degen, golfer: { name } }));
   const records = {
     // Week 1 (tier 3, $15): MK drafted winner A; FRL leader undrafted -> rolls to $6
@@ -144,4 +144,38 @@ test('draft order upload formats', () => {
   const b = L.parseDraftOrders([{ week: 2, order }, { tournament: 'Bogus Open', order }, { week: 3, order: ['MK'] }], schedule, cfg.degens);
   assert.deepEqual(Object.keys(b.orders), ['2']);
   assert.equal(b.errors.length, 2);
+});
+
+test('FRL compares to par, not strokes (two-course events)', () => {
+  const mk = (name, strokes, toPar) => ({ name, key: L.nameKey(name), id: name, status: 'active', toPar, order: 1,
+    rounds: [{ strokes, toPar, holes: 18, started: true }, { strokes: null, toPar: null, holes: 0 }, {}, {}] });
+  const lb = { state: 'in', period: 2, players: [mk('Jesper Svensson', 64, -8), mk('Michael Thorbjornsen', 64, -6), mk('Max Greyserman', 65, -7)] };
+  const r = L.computeResults(lb, {});
+  assert.deepEqual(r.frlLeaders.map((p) => p.name), ['Jesper Svensson']);
+});
+
+test('multi-course weeks have no FRL and carry the pot unchanged', () => {
+  const amex = schedule[0], sentry = schedule[1], pebble = schedule[2], phx = schedule[3];
+  assert.ok(amex.multiCourse && sentry.multiCourse && pebble.multiCourse);
+  assert.ok(!phx.multiCourse);
+  assert.ok(!schedule.find((t) => t.name === 'U.S. Open').multiCourse);
+  const pk = (d, n) => [{ pick: 1, degen: d, golfer: { name: n } }];
+  const fin = (w, f) => ({ final: true, winner: { name: w, key: L.nameKey(w) }, frlFinal: true, frlLeaders: [{ name: f, key: L.nameKey(f) }] });
+  const t = [phx, amex, { ...phx, week: 99 }];
+  const records = {
+    4: { picks: pk('MK', 'A'), result: fin('A', 'Nobody') },        // undrafted FRL -> $5 rolls to $6
+    1: { picks: pk('MK', 'A'), result: fin('A', 'A') },             // multi-course: FRL ignored, $6 stays
+    99: { picks: pk('CC', 'B'), result: fin('B', 'B') },            // CC wins FRL at $6
+  };
+  const s = L.computeSeason(t, records, cfg);
+  assert.equal(s.weeks[1].noFrl, true);
+  assert.equal(s.weeks[1].frlStake, 6);
+  assert.equal(s.weeks[2].frlStake, 6);
+  const by = Object.fromEntries(s.standings.map((r) => [r.degen, r]));
+  assert.equal(by.MK.frls, 0);
+  assert.equal(by.CC.frls, 1);
+  assert.equal(by.CC.winnings, 100 + 30);
+  // commissioner can force FRL on/off
+  assert.equal(L.frlActive(amex, { frl: 'on' }), true);
+  assert.equal(L.frlActive(phx, { frl: 'off' }), false);
 });

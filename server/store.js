@@ -105,3 +105,17 @@ export async function pop(key) {
   const [v] = await redis([['RPOP', key]]);
   return parse(v);
 }
+
+// Replace the item at `index` in a list.
+export async function setAt(key, index, value) {
+  if (!usingRedis) {
+    const l = parse(memory().get(key)) || [];
+    if (index < 0 || index >= l.length) return false;
+    l[index] = JSON.stringify(value);
+    memory().set(key, JSON.stringify(l));
+    saveMem();
+    return true;
+  }
+  await redis([['LSET', key, String(index), JSON.stringify(value)]]);
+  return true;
+}

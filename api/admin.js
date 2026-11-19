@@ -21,7 +21,7 @@ export default wrap(async (req, res) => {
 
     case 'setWeek': { // { week, patch: { order, rounds, stake, frlStake, espnEventId, draftLocked } }
       needWeek();
-      const allowed = ['order', 'rounds', 'stake', 'frlStake', 'espnEventId', 'draftLocked'];
+      const allowed = ['order', 'rounds', 'stake', 'frlStake', 'espnEventId', 'draftLocked', 'frl'];
       const patch = {};
       for (const k of allowed) if (k in (b.patch || {})) patch[k] = b.patch[k] === '' || b.patch[k] === null ? undefined : b.patch[k];
       if (patch.order) {
@@ -53,6 +53,22 @@ export default wrap(async (req, res) => {
       needWeek();
       out.removed = await store.pop(K.picks(week));
       break;
+
+    case 'editPick': { // { week, index, golfer: { name, id } } — swap the golfer on an existing pick
+      needWeek();
+      const [picks] = await store.lists([K.picks(week)]);
+      const i = Number(b.index);
+      if (!(i >= 0 && i < picks.length)) return send(res, 400, { error: 'That pick hasn\'t been made yet' });
+      const name = String((b.golfer && b.golfer.name) || '').trim();
+      if (!name) return send(res, 400, { error: 'Enter a golfer name' });
+      const key = L.nameKey(name);
+      const clash = picks.find((p, j) => j !== i && L.nameKey(p.golfer.name) === key);
+      if (clash) return send(res, 409, { error: `${name} is already ${clash.degen}'s pick ${clash.pick}` });
+      const updated = { ...picks[i], golfer: { name, id: b.golfer.id ? String(b.golfer.id) : null }, editedAt: Date.now() };
+      await store.setAt(K.picks(week), i, updated);
+      out.pick = updated;
+      break;
+    }
 
     case 'resetDraft':
       needWeek();

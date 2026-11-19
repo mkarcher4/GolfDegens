@@ -132,7 +132,7 @@ function parseRoute() {
   S.route = { tab, week };
 }
 const go = (hash) => { if (location.hash === hash) render(); else location.hash = hash; };
-window.addEventListener('hashchange', () => { parseRoute(); S.armed = null; render(); window.scrollTo(0, 0); });
+window.addEventListener('hashchange', () => { parseRoute(); S.armed = null; S.skipDirty = true; render(); window.scrollTo(0, 0); });
 
 function renderTabs() {
   const html = TABS.map((t) => `<button type="button" data-tab="${t.id}" ${S.route.tab === t.id ? 'aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true">${t.icon}</svg><span>${t.label}</span></button>`).join('');
@@ -253,7 +253,9 @@ function renderPots(ds, sw, res, players, own, ev) {
 
   // FRL pot
   let frlWho, frlCls = '';
-  if (res.frlFinal) {
+  if (sw.noFrl) {
+    frlWho = `<b>No FRL this week</b> (${t.multiCourse && r.frl !== 'off' ? 'multi-course event' : 'turned off'}). $${frl}/Degen carries to next week.`;
+  } else if (res.frlFinal) {
     const owners = res.frlLeaders.map((p) => own.reg.get(p.key));
     if (owners.length && owners.every(Boolean)) {
       frlWho = `${[...new Set(owners)].map(degenTag).join(' ')} ${owners.length > 1 ? 'split' : 'wins'} · ${res.frlLeaders.map((p) => esc(p.name)).join(', ')}`;
@@ -401,6 +403,11 @@ function renderMMGW(ds, lb) {
 
 // ── FRL card: round-1 board ──
 function renderFrlCard(ds, sw, res, players, own) {
+  if (sw.noFrl) {
+    return `<section class="card"><div class="card-h"><h2>First Round Leader</h2><span class="right faint" style="font-size:12px">Off this week</span></div><div class="card-b">
+      <div class="muted">${ds.t.multiCourse ? `This tournament is played on more than one course (${esc(ds.t.course)}), so there's` : 'There\'s'} no first-round leader pot this week. The $${sw.frlStake}/Degen FRL pot carries to the next tournament unchanged.</div>
+    </div></section>`;
+  }
   const r1 = players.filter((p) => p.rounds && p.rounds[0] && p.rounds[0].toPar != null);
   if (!r1.length) {
     return `<section class="card"><div class="card-h"><h2>First Round Leader</h2></div><div class="card-b">
@@ -428,7 +435,8 @@ function renderLeaderboard(ds, lb, own) {
   }
   const degens = S.config.degens;
   const filters = [['all', 'All'], ['drafted', 'Drafted'], ...degens.map((d) => [d, d])];
-  const frlKeys = new Set(((lb.results && lb.results.frlFinal && lb.results.frlLeaders) || []).map((p) => p.key));
+  const swk = season().weeks.find((x) => x.week === ds.t.week) || {};
+  const frlKeys = new Set((!swk.noFrl && L.effectiveResults(ds.r).frlFinal ? L.effectiveResults(ds.r).frlLeaders : []).map((p) => p.key));
   let rows = players;
   if (S.lbFilter === 'drafted') rows = rows.filter((p) => own.reg.has(p.key) || own.dfl.has(p.key));
   else if (S.lbFilter !== 'all') rows = rows.filter((p) => own.reg.get(p.key) === S.lbFilter || own.dfl.get(p.key) === S.lbFilter);
@@ -478,7 +486,7 @@ function renderMoney() {
   <div class="pots">
     <div class="pot"><div class="lbl">Season leader</div><div class="amt">${leader && leader.winnings > 0 ? esc(leader.degen) : '—'}</div><div class="who">${leader && leader.winnings > 0 ? `${money(leader.winnings)} won` : 'No money won yet'}</div></div>
     <div class="pot"><div class="lbl">Tournaments settled</div><div class="amt num">${played} <small>of ${S.tournaments.length}</small></div></div>
-    <div class="pot ${frlNow > S.config.frlBase ? 'rolled' : ''}"><div class="lbl">FRL pot this week</div><div class="amt num">$${frlNow * (N - 1)} <small>$${frlNow}/Degen</small></div></div>
+    <div class="pot ${frlNow > S.config.frlBase ? 'rolled' : ''}"><div class="lbl">FRL pot${curW && curW.noFrl ? ' (off this week)' : ' this week'}</div><div class="amt num">$${frlNow * (N - 1)} <small>$${frlNow}/Degen</small></div>${curW && curW.noFrl ? '<div class="who">Multi-course event — carries over</div>' : ''}</div>
   </div>
   <section class="card">
     <div class="card-h"><h2>Season Money Leaderboard</h2></div>
@@ -498,7 +506,7 @@ function renderSchedule() {
   const rows = S.tournaments.map((t) => {
     const w = s.weeks.find((x) => x.week === t.week) || {};
     const winner = w.winnerDegen ? (w.winnerDegen === 'Undrafted' ? '<span class="undrafted">Undrafted</span>' : degenTag(w.winnerDegen)) : '';
-    const frlD = w.frlDegens && w.frlDegens.length ? (w.frlDegens[0] === 'Undrafted' ? '<span class="undrafted">Undrafted</span>' : w.frlDegens.map(degenTag).join(' ')) : '';
+    const frlD = w.noFrl ? '<span class="faint">No FRL</span>' : w.frlDegens && w.frlDegens.length ? (w.frlDegens[0] === 'Undrafted' ? '<span class="undrafted">Undrafted</span>' : w.frlDegens.map(degenTag).join(' ')) : '';
     const lastName = (n) => esc(String(n).split(' ').slice(-1)[0]);
     return `<tr class="clickable ${t.week === cur ? 'current' : ''}" data-week="${t.week}">
       <td class="num faint">${t.week}</td>
@@ -508,8 +516,8 @@ function renderSchedule() {
       <td class="muted loc">${esc(t.location)}</td>
       <td class="r num">$${w.stake}</td>
       <td class="r num">$${w.payout}</td>
-      <td class="r num">$${w.frlStake}</td>
-      <td class="r num">$${w.frlPayout}</td>
+      <td class="r num ${w.noFrl ? 'faint' : ''}">${w.noFrl ? '—' : `$${w.frlStake}`}</td>
+      <td class="r num ${w.noFrl ? 'faint' : ''}">${w.noFrl ? '—' : `$${w.frlPayout}`}</td>
       <td class="c">${winner}</td>
       <td class="c">${frlD}</td>
       <td>${w.golfWinner ? lastName(w.golfWinner) : ''}</td>
@@ -557,6 +565,10 @@ function renderAdmin() {
         <div class="field"><label for="wkRounds">Rounds</label><input id="wkRounds" type="number" min="1" max="12" placeholder="${fmt.rounds}" value="${esc(r.rounds ?? '')}"></div>
         <div class="field"><label for="wkStake">Stake / Degen</label><input id="wkStake" type="number" min="0" placeholder="${S.config.tierStakes[t.tier]} (Tier ${t.tier})" value="${esc(r.stake ?? '')}"></div>
         <div class="field"><label for="wkFrl">FRL stake / Degen</label><input id="wkFrl" type="number" min="0" placeholder="auto (${season().weeks.find((x) => x.week === w)?.frlStake ?? S.config.frlBase})" value="${esc(r.frlStake ?? '')}"></div>
+        <div class="field"><label for="wkFrlMode">FRL this week</label><select id="wkFrlMode">
+          <option value="" ${!r.frl ? 'selected' : ''}>Auto (${t.multiCourse ? 'off — multi-course' : 'on'})</option>
+          <option value="on" ${r.frl === 'on' ? 'selected' : ''}>On</option>
+          <option value="off" ${r.frl === 'off' ? 'selected' : ''}>Off (no FRL, pot carries)</option></select></div>
         <div class="field"><label for="wkEspn">ESPN event ID</label><input id="wkEspn" inputmode="numeric" placeholder="auto" value="${esc(r.espnEventId ?? '')}"></div>
       </div>
       <div class="help">Leave a box blank to use the default. Payout = stake × ${N - 1}. Changing a stake updates the season leaderboard right away.</div>
@@ -574,6 +586,8 @@ function renderAdmin() {
       <div class="help">While unlocked, you can make picks for whoever is on the clock from the This Week tab.</div>
     </div>
   </section>
+
+  ${renderPickEditor(ds)}
 
   <section class="card"><div class="card-h"><h2>DraftKings odds</h2></div>
     <div class="card-b form">
@@ -630,6 +644,31 @@ function renderAdmin() {
   </section>`;
 }
 
+// Commissioner: every slot of the draft, with the golfer editable on picks already made.
+function renderPickEditor(ds) {
+  const { t, r, fmt, picks } = ds;
+  if (!ds.hasOrder && !picks.length) return `<section class="card"><div class="card-h"><h2>Draft picks</h2></div><div class="empty">Set this week's draft order first.</div></section>`;
+  const w = t.week;
+  if (!S.lb[w] && !S.lbLoading[w]) loadLb(w).then(render);
+  const pool = draftPool(ds, (S.lb[w] && S.lb[w].players) || []);
+  const seq = ds.hasOrder ? L.snakeSequence(r.order, fmt) : picks.map((p) => ({ pick: p.pick, round: p.round, degen: p.degen, dfl: p.dfl }));
+  const rows = seq.map((slot, i) => {
+    const pk = picks[i];
+    const roundLbl = slot.dfl ? 'DFL' : slot.round;
+    if (!pk) return `<tr><td class="num faint">${slot.pick}</td><td class="c num faint">${roundLbl}</td><td>${degenTag(slot.degen)}</td><td class="faint" colspan="2">${i === picks.length ? 'On the clock' : 'Not picked yet'}</td></tr>`;
+    return `<tr><td class="num faint">${pk.pick}</td><td class="c num faint">${roundLbl}</td><td>${degenTag(pk.degen)}</td>
+      <td style="width:100%"><input class="pick-input" id="pk-${i}" list="fieldList" value="${esc(pk.golfer.name)}" aria-label="Pick ${pk.pick} golfer" autocomplete="off"></td>
+      <td><button class="btn sm" type="button" data-editpick="${i}">Save</button></td></tr>`;
+  }).join('');
+  return `<section class="card"><div class="card-h"><h2>Draft picks</h2><span class="right faint num">${picks.length}/${ds.total}</span></div>
+    <datalist id="fieldList">${pool.map((p) => `<option value="${esc(p.name)}"></option>`).join('')}</datalist>
+    <div class="scroll" style="max-height:520px;overflow-y:auto"><table class="pick-edit">
+      <thead><tr><th>#</th><th class="c">Rd</th><th>Degen</th><th>Golfer</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <div class="note">Change a golfer and tap <b>Save</b> on that row. Start typing to pick from this week's field. A golfer can only be on one team.</div>
+  </section>`;
+}
+
 // ───────────────────────── Render & events ─────────────────────────
 function render() {
   if (!S.tournaments.length) return;
@@ -640,7 +679,17 @@ function render() {
   const caret = focusId === 'draftSearch' ? document.activeElement.selectionStart : null;
   const scrollPlayers = $('.players') ? $('.players').scrollTop : 0;
   S._season = null;
+  // Keep anything typed but not yet saved (e.g. a pick edit) across background refreshes.
+  const dirty = S.skipDirty ? [] : [...view.querySelectorAll('input[id], textarea[id], select[id]')]
+    .filter((el) => el.type !== 'file' && (el.type === 'checkbox' ? el.checked !== el.defaultChecked : el.tagName === 'SELECT' ? [...el.options].some((o) => o.selected !== o.defaultSelected) : el.value !== el.defaultValue))
+    .map((el) => [el.id, el.type === 'checkbox' ? el.checked : el.value]);
+  S.skipDirty = false;
   view.innerHTML = S.route.tab === 'money' ? renderMoney() : S.route.tab === 'schedule' ? renderSchedule() : S.route.tab === 'admin' ? renderAdmin() : renderWeek();
+  for (const [id, v] of dirty) {
+    const el = document.getElementById(id);
+    if (!el || id === 'draftSearch') continue;
+    if (el.type === 'checkbox') el.checked = v; else el.value = v;
+  }
   if (focusId && $(`#${focusId}`)) { const el = $(`#${focusId}`); el.focus(); if (caret != null) el.setSelectionRange(caret, caret); }
   if ($('.players')) $('.players').scrollTop = scrollPlayers;
   schedulePoll();
@@ -674,6 +723,20 @@ document.addEventListener('click', async (e) => {
     return render();
   }
 
+  if (el.dataset.editpick != null) {
+    const i = Number(el.dataset.editpick);
+    const name = $(`#pk-${i}`).value.trim();
+    const ds = draftState(S.adminWeek);
+    const match = draftPool(ds, (S.lb[S.adminWeek] && S.lb[S.adminWeek].players) || []).find((p) => p.key === L.nameKey(name));
+    if (!match && !confirm(`"${name}" isn't in this week's field. Save it anyway?`)) return;
+    try {
+      await api('/api/admin', { pin: S.adminPin, action: 'editPick', week: S.adminWeek, index: i, golfer: { name: match ? match.name : name, id: match ? match.id : null } });
+      toast(`Pick ${ds.picks[i].pick} → ${match ? match.name : name}`);
+      await loadAll(); render();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+
   // ── admin ──
   const adm = (body, okMsg) => api('/api/admin', { pin: S.adminPin, ...body }).then(async (d) => { if (okMsg) toast(typeof okMsg === 'function' ? okMsg(d) : okMsg); await loadAll(); render(); return d; }).catch((err) => { toast(err.message, true); if (err.status === 401) { S.adminPin = ''; localStorage.removeItem('gd.adminPin'); render(); } });
   const w = S.adminWeek;
@@ -686,7 +749,7 @@ document.addEventListener('click', async (e) => {
     case 'adminLogout': S.adminPin = ''; localStorage.removeItem('gd.adminPin'); return render();
     case 'saveWeek': {
       const order = [...document.querySelectorAll('[data-order]')].map((s) => s.value);
-      const patch = { rounds: num($('#wkRounds').value), stake: num($('#wkStake').value), frlStake: num($('#wkFrl').value), espnEventId: $('#wkEspn').value.trim() || null, draftLocked: $('#wkLock').checked || null };
+      const patch = { rounds: num($('#wkRounds').value), stake: num($('#wkStake').value), frlStake: num($('#wkFrl').value), espnEventId: $('#wkEspn').value.trim() || null, draftLocked: $('#wkLock').checked || null, frl: $('#wkFrlMode').value || null };
       if (order.every(Boolean)) patch.order = order;
       else if (order.some(Boolean)) return toast('Fill all six draft slots (or none)', true);
       return adm({ action: 'setWeek', week: w, patch }, 'Week saved');
@@ -718,7 +781,7 @@ document.addEventListener('change', async (e) => {
   const el = e.target;
   if (el.id === 'weekSelect') return go(`#/week/${el.value}`);
   if (el.id === 'showTaken') { S.showTaken = el.checked; return render(); }
-  if (el.id === 'adminWeek') { S.adminWeek = Number(el.value); return render(); }
+  if (el.id === 'adminWeek') { S.adminWeek = Number(el.value); S.skipDirty = true; return render(); }
   if (el.id === 'ordersFile' || el.id === 'schedFile') {
     const f = el.files[0];
     if (!f) return;
