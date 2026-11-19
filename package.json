@@ -1,0 +1,13 @@
+{
+  "name": "golf-degens",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "node scripts/dev-server.js",
+    "dev:mock": "MOCK_ESPN=r3 node scripts/dev-server.js",
+    "test": "node --test test/*.test.js"
+  }
+}

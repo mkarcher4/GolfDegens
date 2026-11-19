@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Golf Degens</title>
+  <meta name="theme-color" content="#0A1F3C">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Golf Degens">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="/icons/icon-64.png" alt="" width="32" height="32">
+      <span>Golf Degens</span>
+    </div>
+    <nav class="tabs-top" aria-label="Sections"></nav>
+    <button class="me-chip" id="meChip" type="button" aria-label="Switch Degen">–</button>
+  </header>
+
+  <main id="view" tabindex="-1"></main>
+
+  <nav class="tabs-bottom" aria-label="Sections"></nav>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <dialog id="modal"></dialog>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

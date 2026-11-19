@@ -1,0 +1,5 @@
+{
+  "The American Express": ["MK", "CC", "GW", "JR", "JS", "MM"],
+  "The Sentry": ["CC", "GW", "JR", "JS", "MM", "MK"],
+  "3": ["GW", "JR", "JS", "MM", "MK", "CC"]
+}
