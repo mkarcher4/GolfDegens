@@ -41,6 +41,15 @@ export default wrap(async (req, res) => {
       break;
     }
 
+    case 'setMoonshots': { // { week, names: [golfer names] }  (empty list clears)
+      needWeek();
+      const seen = new Set();
+      const names = (b.names || []).map((n) => String(n).trim()).filter((n) => n && !seen.has(L.nameKey(n)) && seen.add(L.nameKey(n)));
+      await patchWeek(week, { moonshots: names.length ? names : undefined });
+      out.count = names.length;
+      break;
+    }
+
     case 'setOdds': { // { week, text }  (empty text clears)
       needWeek();
       const odds = L.parseOddsText(b.text || '');

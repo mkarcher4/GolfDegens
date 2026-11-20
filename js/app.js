@@ -168,6 +168,8 @@ function scoreStyle(n) {
   return `background:${mix('#FDECEC', '#E57373', t)};color:${t > .7 ? '#fff' : '#8A1C1C'}`;
 }
 const scoreCell = (n, extra = '') => `<span class="score num" style="${scoreStyle(n)}">${n == null ? '–' : L.fmtToPar(n)}${extra}</span>`;
+const MOON = '<svg class="moon" viewBox="0 0 24 24" aria-label="Moonshot" role="img"><title>Moonshot</title><path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.6 8.6 0 1 0 11.1 11.1z" fill="#F5C451" stroke="#B8860B" stroke-width="1.3" stroke-linejoin="round"/><circle cx="9.5" cy="13" r="1.2" fill="#D9A520"/><circle cx="13.5" cy="17" r="0.9" fill="#D9A520"/></svg>';
+const moonKeys = (w) => new Set((rec(w).moonshots || []).map(L.nameKey));
 const degenTag = (d) => `<span class="degen-tag${d === S.me ? ' me' : ''}">${esc(d)}</span>`;
 
 // ───────────────────────── WEEK VIEW ─────────────────────────
@@ -446,11 +448,14 @@ function renderLeaderboard(ds, lb, own) {
     return `<section class="card"><div class="card-h"><h2>Degen Leaderboard</h2></div><div class="empty">${msg}</div></section>`;
   }
   const degens = S.config.degens;
-  const filters = [['all', 'All'], ['drafted', 'Drafted'], ...degens.map((d) => [d, d])];
+  const moons = moonKeys(ds.t.week);
+  const filters = [['all', 'All'], ['drafted', 'Drafted'], ...(moons.size ? [['moon', 'Moonshots']] : []), ...degens.map((d) => [d, d])];
+  if (S.lbFilter === 'moon' && !moons.size) S.lbFilter = 'all';
   const swk = season().weeks.find((x) => x.week === ds.t.week) || {};
   const frlKeys = new Set((!swk.noFrl && L.effectiveResults(ds.r).frlFinal ? L.effectiveResults(ds.r).frlLeaders : []).map((p) => p.key));
   let rows = players;
   if (S.lbFilter === 'drafted') rows = rows.filter((p) => own.reg.has(p.key) || own.dfl.has(p.key));
+  else if (S.lbFilter === 'moon') rows = rows.filter((p) => moons.has(p.key));
   else if (S.lbFilter !== 'all') rows = rows.filter((p) => own.reg.get(p.key) === S.lbFilter || own.dfl.get(p.key) === S.lbFilter);
   const body = rows.map((p) => {
     const d = own.reg.get(p.key);
@@ -459,7 +464,7 @@ function renderLeaderboard(ds, lb, own) {
     const degenCell = d ? degenTag(d) : dd ? `${degenTag(dd)} <span class="faint" style="font-size:11px">DFL</span>` : '<span class="undrafted">Undrafted</span>';
     return `<tr class="${d || dd ? 'drafted' : ''} ${out ? 'cut-row' : ''} ${(d || dd) === S.me && S.me ? 'me' : ''}">
       <td class="pos num sticky-col">${esc(p.pos)}</td>
-      <td class="golfer-cell">${esc(p.name)}${frlKeys.has(p.key) ? '<span class="frl-flag">FRL</span>' : ''}</td>
+      <td class="golfer-cell">${esc(p.name)}${moons.has(p.key) ? MOON : ''}${frlKeys.has(p.key) ? '<span class="frl-flag">FRL</span>' : ''}</td>
       <td class="c">${out ? `<span class="score num out-score">${p.toPar == null ? p.status.toUpperCase() : L.fmtToPar(p.toPar)}</span>` : scoreCell(p.toPar)}</td>
       <td>${degenCell}</td>
       <td class="c num">${esc(p.todayStr)}</td>
@@ -565,7 +570,10 @@ function renderAdmin() {
   const N = degens.length;
   const lastPick = ds.picks[ds.picks.length - 1];
 
+  if (!S.lb[w] && !S.lbLoading[w]) loadLb(w).then(render);
+  const fieldNames = draftPool(ds, (S.lb[w] && S.lb[w].players) || []).map((p) => p.name);
   return `
+  <datalist id="fieldList">${fieldNames.map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist>
   ${S.storage === 'memory' ? '<div class="warn"><b>Database not connected</b> — see README step 3.</div>' : ''}
   <section class="card"><div class="card-h"><h2>Week</h2><span class="right"><button class="btn sm" type="button" id="adminLogout">Lock</button></span></div>
     <div class="card-b form">
@@ -600,6 +608,8 @@ function renderAdmin() {
   </section>
 
   ${renderPickEditor(ds)}
+
+  ${renderMoonshots(ds)}
 
   <section class="card"><div class="card-h"><h2>DraftKings odds</h2></div>
     <div class="card-b form">
@@ -657,13 +667,32 @@ function renderAdmin() {
   </section>`;
 }
 
+// Commissioner: Moonshot golfers for this tournament (side wager, display only).
+function renderMoonshots(ds) {
+  const w = ds.t.week;
+  S.msDraft = S.msDraft || {};
+  const saved = ds.r.moonshots || [];
+  const rows = S.msDraft[w] || (saved.length ? [...saved] : ['']);
+  const field = new Set(draftPool(ds, (S.lb[w] && S.lb[w].players) || []).map((p) => p.key));
+  const inputs = rows.map((n, i) => {
+    const off = n.trim() && field.size && !field.has(L.nameKey(n));
+    return `<div class="ms-row">${MOON}<input class="pick-input" id="ms-${w}-${i}" data-ms="${i}" list="fieldList" value="${esc(n)}" placeholder="Golfer name" aria-label="Moonshot ${i + 1}" autocomplete="off">
+      <button class="btn sm" type="button" data-msdel="${i}" aria-label="Remove moonshot ${i + 1}">✕</button></div>${off ? '<div class="help neg-amt" style="margin:-4px 0 4px 30px">Not in this week\'s field — check the spelling.</div>' : ''}`;
+  }).join('');
+  return `<section class="card"><div class="card-h"><h2>Moonshots</h2><span class="right faint num">${saved.length} saved</span></div>
+    <div class="card-b form">
+      <div class="help">Golfers the group has a separate Moonshot bet on this week. They get a moon next to their name on the Degen Leaderboard.</div>
+      <div class="ms-list">${inputs}</div>
+      <div class="row"><button class="btn" type="button" id="msAdd">+ Add another moonshot</button><button class="btn primary" type="button" id="msSave">Save moonshots</button></div>
+    </div>
+  </section>`;
+}
+
 // Commissioner: every slot of the draft, with the golfer editable on picks already made.
 function renderPickEditor(ds) {
   const { t, r, fmt, picks } = ds;
   if (!ds.hasOrder && !picks.length) return `<section class="card"><div class="card-h"><h2>Draft picks</h2></div><div class="empty">Set this week's draft order first.</div></section>`;
   const w = t.week;
-  if (!S.lb[w] && !S.lbLoading[w]) loadLb(w).then(render);
-  const pool = draftPool(ds, (S.lb[w] && S.lb[w].players) || []);
   const seq = ds.hasOrder ? L.snakeSequence(r.order, fmt) : picks.map((p) => ({ pick: p.pick, round: p.round, degen: p.degen, dfl: p.dfl }));
   const rows = seq.map((slot, i) => {
     const pk = picks[i];
@@ -674,7 +703,6 @@ function renderPickEditor(ds) {
       <td><button class="btn sm" type="button" data-editpick="${i}">Save</button></td></tr>`;
   }).join('');
   return `<section class="card"><div class="card-h"><h2>Draft picks</h2><span class="right faint num">${picks.length}/${ds.total}</span></div>
-    <datalist id="fieldList">${pool.map((p) => `<option value="${esc(p.name)}"></option>`).join('')}</datalist>
     <div class="scroll" style="max-height:520px;overflow-y:auto"><table class="pick-edit">
       <thead><tr><th>#</th><th class="c">Rd</th><th>Degen</th><th>Golfer</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>
@@ -736,6 +764,22 @@ document.addEventListener('click', async (e) => {
     return render();
   }
 
+  if (el.id === 'msAdd' || el.dataset.msdel != null || el.id === 'msSave') {
+    const w = S.adminWeek;
+    S.msDraft = S.msDraft || {};
+    const cur = [...document.querySelectorAll('[data-ms]')].map((i) => i.value);
+    if (el.id === 'msAdd') { S.msDraft[w] = [...cur, '']; S.skipDirty = true; render(); const last = document.querySelector(`#ms-${w}-${cur.length}`); if (last) last.focus(); return; }
+    if (el.dataset.msdel != null) { cur.splice(Number(el.dataset.msdel), 1); S.msDraft[w] = cur.length ? cur : ['']; S.skipDirty = true; return render(); }
+    const names = cur.map((n) => n.trim()).filter(Boolean);
+    try {
+      const d = await api('/api/admin', { pin: S.adminPin, action: 'setMoonshots', week: w, names });
+      delete S.msDraft[w];
+      toast(d.count ? `${d.count} moonshot${d.count === 1 ? '' : 's'} saved` : 'Moonshots cleared');
+      S.skipDirty = true; await loadAll(); render();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+
   if (el.dataset.editpick != null) {
     const i = Number(el.dataset.editpick);
     const name = $(`#pk-${i}`).value.trim();
@@ -789,6 +833,10 @@ document.addEventListener('click', async (e) => {
 const num = (v) => (String(v).trim() === '' ? null : Number(v));
 
 document.addEventListener('input', (e) => {
+  if (e.target.dataset && e.target.dataset.ms != null) {
+    S.msDraft = S.msDraft || {};
+    S.msDraft[S.adminWeek] = [...document.querySelectorAll('[data-ms]')].map((i) => i.value);
+  }
   if (e.target.id === 'draftSearch') { S.draftSearch = e.target.value; render(); }
 });
 document.addEventListener('change', async (e) => {
