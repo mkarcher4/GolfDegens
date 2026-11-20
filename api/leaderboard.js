@@ -18,7 +18,9 @@ export default wrap(async (req, res) => {
   if (!t) return send(res, 404, { error: 'Unknown week' });
 
   const cached = await store.get(K.lb(week));
-  const fresh = !q.force && cached && (cached.final || Date.now() - cached.ts < TTL_MS);
+  // Only trust a saved "final" copy made by this version (v2); older copies could have been
+  // frozen at the end of a day's play by mistake, so those get re-pulled.
+  const fresh = !q.force && cached && ((cached.final && cached.v === 2) || Date.now() - cached.ts < TTL_MS);
   if (fresh) return send(res, 200, cached, cacheHeaders(cached));
 
   const rec = (await store.get(K.week(week))) || {};
@@ -37,6 +39,7 @@ export default wrap(async (req, res) => {
   const results = L.computeResults(lb, fmt);
   const body = {
     week,
+    v: 2,
     ts: Date.now(),
     available: true,
     final: lb.state === 'post',
@@ -53,7 +56,7 @@ export default wrap(async (req, res) => {
     || JSON.stringify(prev.frlLeaders) !== JSON.stringify(results.frlLeaders)
     || JSON.stringify(prev.dfl) !== JSON.stringify(results.dfl);
   const patch = {};
-  if (changed && (results.frlFinal || results.final)) patch.result = { final: results.final, frlFinal: results.frlFinal, winner: results.winner, frlLeaders: results.frlLeaders, dfl: results.dfl };
+  if (changed && (results.frlFinal || results.final || prev.final)) patch.result = { final: results.final, frlFinal: results.frlFinal, winner: results.winner, frlLeaders: results.frlLeaders, dfl: results.dfl };
   if (!rec.espnEventId && lb.id) patch.espnEventId = lb.id;
   if (Object.keys(patch).length) { await patchWeek(week, patch); if (patch.result) await bump(); }
 

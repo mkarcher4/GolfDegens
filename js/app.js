@@ -182,7 +182,7 @@ function renderWeek() {
   const sw = season().weeks.find((x) => x.week === w) || {};
   const res = L.effectiveResults(r);
   const own = L.ownership(picks);
-  const live = ev && ev.state === 'in';
+  const live = ev && ev.state === 'in' && !/complete|suspend|delay/i.test(ev.detail || '');
 
   const prev = S.tournaments.find((x) => x.week === w - 1);
   const next = S.tournaments.find((x) => x.week === w + 1);

@@ -242,8 +242,16 @@ export function normalizeEspnEvent(ev) {
   const comp = (ev.competitions || [])[0] || {};
   const st = comp.status || ev.status || {};
   const type = st.type || {};
-  const state = type.state || (type.completed ? 'post' : 'pre');
+  const espnState = type.state || (type.completed ? 'post' : 'pre');
   const period = Number(st.period) || 0;
+  // ESPN marks the event "post"/completed at the end of EVERY day ("Round 2 - Play Complete").
+  // The tournament is only over once ESPN calls it Final and round 4 (or a playoff) is done.
+  const statusName = String(type.name || '');
+  const statusText = `${type.description || ''} ${type.detail || ''} ${type.shortDetail || ''}`;
+  const dayDone = /PLAY_COMPLETE|SUSPEND|DELAY/i.test(statusName) || /play complete|suspended|delayed/i.test(statusText);
+  const saysFinal = /FINAL/i.test(statusName) || /^\s*final\b/i.test(type.shortDetail || type.detail || type.description || '');
+  const complete = espnState === 'post' && !dayDone && (saysFinal || type.completed === true) && (period === 0 || period >= 4);
+  const state = complete ? 'post' : espnState === 'post' ? 'in' : espnState;
 
   let players = (comp.competitors || []).map((c, i) => {
     const a = c.athlete || {};
@@ -326,6 +334,7 @@ export function normalizeEspnEvent(ev) {
     id: String(ev.id || ''),
     name: ev.name || ev.shortName || '',
     state,
+    complete,
     period,
     detail: type.shortDetail || type.detail || '',
     start: ev.date || comp.date || null,

@@ -213,3 +213,24 @@ test('WD detection: ESPN flag, score text, and no-round-1 fallback', () => {
   assert.equal(patched[patched.length - 1].status, 'wd');
   assert.equal(n.players.find((p) => p.name === 'Second Guy').status, 'active'); // original untouched
 });
+
+test('end of a day is not the end of the tournament', () => {
+  const base = mockScoreboard({ stage: 'r2' }).events[0];
+  const withStatus = (status) => ({ ...base, competitions: [{ ...base.competitions[0], status }] });
+  // ESPN's end-of-day status: state "post", completed true, "Round 2 - Play Complete"
+  const day = L.normalizeEspnEvent(withStatus({ period: 2, type: { name: 'STATUS_PLAY_COMPLETE', state: 'post', completed: true, shortDetail: 'Round 2 - Play Complete' } }));
+  assert.equal(day.state, 'in');
+  assert.equal(day.complete, false);
+  const r = L.computeResults(day, {});
+  assert.equal(r.final, false);
+  assert.equal(r.winner, null);
+  assert.ok(r.frlFinal); // FRL is still settled after round 1
+  // Even a "completed" flag without Play Complete text doesn't end it before round 4
+  assert.equal(L.normalizeEspnEvent(withStatus({ period: 3, type: { state: 'post', completed: true, shortDetail: 'Round 3' } })).complete, false);
+  // Round 4 play complete (e.g. playoff pending) is not final either
+  assert.equal(L.normalizeEspnEvent(withStatus({ period: 4, type: { name: 'STATUS_PLAY_COMPLETE', state: 'post', completed: true, shortDetail: 'Round 4 - Play Complete' } })).complete, false);
+  // The real finish
+  const fin = L.normalizeEspnEvent(withStatus({ period: 4, type: { name: 'STATUS_FINAL', state: 'post', completed: true, shortDetail: 'Final' } }));
+  assert.equal(fin.state, 'post');
+  assert.ok(L.computeResults(fin, {}).final);
+});
