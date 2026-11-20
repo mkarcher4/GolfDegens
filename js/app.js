@@ -251,7 +251,7 @@ function renderPots(ds, sw, res, players, own, ev) {
     mainCls = d ? 'won' : '';
   } else if (ev && ev.state === 'in') {
     const lead = projectedLeader(players);
-    mainWho = lead.length ? `Leader: ${fmtNames(lead.slice(0, 2))}${lead.length > 2 ? ` +${lead.length - 2}` : ''}` : 'Live';
+    mainWho = lead.length ? `${lead.length > 1 ? `Tied for the lead (T1, ${L.fmtToPar(lead[0].toPar)})` : `Leader (${L.fmtToPar(lead[0].toPar)})`}: ${fmtNames(lead)}` : 'Live';
   } else if (ds.picks.length) mainWho = ds.complete ? 'Drafted — waiting on Thursday' : 'Draft in progress';
   else if (ds.hasOrder) mainWho = 'Draft order is set';
 
@@ -271,7 +271,7 @@ function renderPots(ds, sw, res, players, own, ev) {
   } else {
     const lb = S.lb[t.week];
     const lead = lb && lb.results ? lb.results.r1Leaders || [] : [];
-    frlWho = lead.length && ev && ev.state === 'in' ? `R1 leader: ${fmtNames(lead.slice(0, 2))}${lead.length > 2 ? ` +${lead.length - 2}` : ''}` : (frl > S.config.frlBase ? `Rolled over ${frl - S.config.frlBase}×` : 'Solo first-round leader');
+    frlWho = lead.length && ev && ev.state === 'in' ? `${lead.length > 1 ? 'Tied for R1 lead' : 'R1 leader'}: ${fmtNames(lead)}` : (frl > S.config.frlBase ? `Rolled over ${frl - S.config.frlBase}×` : 'Solo first-round leader');
   }
 
   let html = `<div class="pots">
