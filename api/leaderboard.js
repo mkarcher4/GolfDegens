@@ -33,6 +33,7 @@ export default wrap(async (req, res) => {
   }
 
   const lb = L.normalizeEspnEvent(raw);
+  if (rec.override && Array.isArray(rec.override.wd)) lb.players = L.applyManualWd(lb.players, rec.override.wd);
   const results = L.computeResults(lb, fmt);
   const body = {
     week,

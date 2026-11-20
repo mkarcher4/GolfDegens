@@ -71,6 +71,13 @@ async function loadLb(week, force) {
 }
 
 const rec = (w) => S.weeks[w] || { picks: [] };
+// Leaderboard for a week with the commissioner's manual WDs applied.
+function lbFor(w) {
+  const lb = S.lb[w];
+  const wd = (rec(w).override || {}).wd;
+  if (!lb || !Array.isArray(wd) || !wd.length || !lb.players) return lb;
+  return { ...lb, players: L.applyManualWd(lb.players, wd) };
+}
 const tourn = (w) => S.tournaments.find((t) => t.week === w);
 function season() {
   if (!S._season) S._season = L.computeSeason(S.tournaments, S.weeks, S.config);
@@ -169,7 +176,7 @@ function renderWeek() {
   const ds = draftState(w);
   const { t, r, fmt, picks } = ds;
   if (!S.lb[w] && !S.lbLoading[w]) loadLb(w).then(() => { if (S.lb[w]) S.lb[w]._fetchedAt = Date.now(); render(); });
-  const lb = S.lb[w];
+  const lb = lbFor(w);
   const players = (lb && lb.players) || [];
   const ev = lb && lb.event;
   const sw = season().weeks.find((x) => x.week === w) || {};
@@ -217,9 +224,6 @@ function renderWeek() {
 
   html += renderLeaderboard(ds, lb, own);
 
-  if (lb && lb.ts) {
-    html += `<div class="statusline"><span>ESPN leaderboard · updated ${new Date(lb.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}${lb.stale ? ' (ESPN unreachable — showing last copy)' : ''}</span><button type="button" id="refreshLb">Refresh</button></div>`;
-  }
   return html;
 }
 
@@ -345,12 +349,20 @@ function renderDraft(ds, players) {
   return html + '</section>';
 }
 
+// "Updated 12:19 PM · Refresh" — lives in the header of the first scores card.
+function refreshCtl(w) {
+  const lb = S.lb[w];
+  if (!lb || !lb.ts) return '';
+  const t = new Date(lb.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `<span class="right refresh-ctl">${lb.stale ? '<span class="neg-amt">ESPN unreachable · </span>' : ''}<span class="faint">Updated ${t}</span><button type="button" id="refreshLb" ${S.lbLoading[w] ? 'disabled' : ''}>${S.lbLoading[w] ? 'Refreshing…' : 'Refresh'}</button></span>`;
+}
+
 // ── Tournament scoring (team table) ──
 function renderTeams(ds, players, own) {
   const { r, fmt, picks, clock } = ds;
   const order = r.order || [];
   if (!order.length && !picks.length) return '';
-  const lb = S.lb[ds.t.week];
+  const lb = lbFor(ds.t.week);
   const degens = order.length ? order : [...new Set(picks.map((p) => p.degen))];
   const totalRounds = fmt.rounds + (fmt.dfl ? 1 : 0);
   const counted = {};
@@ -371,12 +383,12 @@ function renderTeams(ds, players, own) {
       const out = pl && pl.status !== 'active';
       const isCounted = pl && counted[d].has(pl.key);
       cells += `<td><span class="golfer ${out ? 'cut' : ''} ${isCounted ? 'counted' : ''}">${esc(pk.golfer.name)}</span>${out ? `<span class="tag-cut">${pl.status.toUpperCase()}</span>` : ''}</td>
-        <td class="c sc">${pl ? scoreCell(pl.toPar) : '<span class="faint">–</span>'}</td>`;
+        <td class="c sc">${!pl ? '<span class="faint">–</span>' : out ? `<span class="score num out-score">${pl.toPar == null ? pl.status.toUpperCase() : L.fmtToPar(pl.toPar)}</span>` : scoreCell(pl.toPar)}</td>`;
     }
     return `<tr class="${d === S.me ? 'me' : ''}">${cells}</tr>`;
   }).join('');
   return `<section class="card">
-    <div class="card-h"><h2>Tournament Scoring</h2></div>
+    <div class="card-h"><h2>Tournament Scoring</h2>${refreshCtl(ds.t.week)}</div>
     <div class="scroll"><table class="team-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>
     <div class="note">Bold golfers are the ${fmt.mmgwCount} counting toward each Degen's MMGW score.</div>
   </section>`;
@@ -448,14 +460,14 @@ function renderLeaderboard(ds, lb, own) {
     return `<tr class="${d || dd ? 'drafted' : ''} ${out ? 'cut-row' : ''} ${(d || dd) === S.me && S.me ? 'me' : ''}">
       <td class="pos num sticky-col">${esc(p.pos)}</td>
       <td class="golfer-cell">${esc(p.name)}${frlKeys.has(p.key) ? '<span class="frl-flag">FRL</span>' : ''}</td>
-      <td class="c">${out ? `<span class="faint num">${L.fmtToPar(p.toPar)}</span>` : scoreCell(p.toPar)}</td>
+      <td class="c">${out ? `<span class="score num out-score">${p.toPar == null ? p.status.toUpperCase() : L.fmtToPar(p.toPar)}</span>` : scoreCell(p.toPar)}</td>
       <td>${degenCell}</td>
       <td class="c num">${esc(p.todayStr)}</td>
       <td class="c num faint">${esc(p.thru)}</td>
     </tr>`;
   }).join('');
   return `<section class="card">
-    <div class="card-h"><h2>Degen Leaderboard</h2><span class="right faint" style="font-size:12px">${players.length} golfers</span></div>
+    <div class="card-h"><h2>Degen Leaderboard</h2>${(ds.r.order && ds.r.order.length) || ds.picks.length ? `<span class="right faint" style="font-size:12px">${players.length} golfers</span>` : refreshCtl(ds.t.week)}</div>
     <div class="filters">${filters.map(([k, l]) => `<button type="button" data-lbf="${k}" aria-pressed="${S.lbFilter === k}">${esc(l)}</button>`).join('')}</div>
     <div class="scroll"><table class="lb-table">
       <thead><tr><th class="sticky-col">Pos</th><th>Golfer</th><th class="c">Score</th><th>Degen</th><th class="c">Today</th><th class="c">Thru</th></tr></thead>
@@ -602,6 +614,7 @@ function renderAdmin() {
       <div class="help">ESPN fills these automatically. Only set an override if something's wrong. Use golfer names exactly as drafted, separate ties with commas, or type <code>none</code> for no result.</div>
       <div class="field"><label for="ovWinner">Tournament winner</label><input id="ovWinner" placeholder="${esc(auto.winner ? auto.winner.name : 'auto')}" value="${esc(ovr.winner ?? '')}"></div>
       <div class="field"><label for="ovFrl">First-round leader(s)</label><input id="ovFrl" placeholder="${esc(auto.frlLeaders && auto.frlLeaders.length ? auto.frlLeaders.map((p) => p.name).join(', ') : 'auto')}" value="${esc(Array.isArray(ovr.frl) ? ovr.frl.join(', ') : ovr.frl ?? '')}"></div>
+      <div class="field"><label for="ovWd">Withdrawn (WD) golfers</label><input id="ovWd" placeholder="Only if ESPN misses one, e.g. Cameron Champ, Camilo Villegas" value="${esc(Array.isArray(ovr.wd) ? ovr.wd.join(', ') : '')}"></div>
       ${fmt.dfl ? `<div class="field"><label for="ovDfl">Dead last (DFL)</label><input id="ovDfl" placeholder="${esc(auto.dfl && auto.dfl.length ? auto.dfl.map((p) => p.name).join(', ') : 'auto')}" value="${esc(Array.isArray(ovr.dfl) ? ovr.dfl.join(', ') : ovr.dfl ?? '')}"></div>` : ''}
       <div class="row"><button class="btn primary" type="button" id="saveOverride">Save overrides</button><button class="btn" type="button" id="refreshEspn">Re-pull from ESPN</button></div>
     </div>
@@ -702,7 +715,7 @@ document.addEventListener('click', async (e) => {
   if (el.dataset.week && el.matches('.arrow')) return go(`#/week/${el.dataset.week}`);
   if (el.matches('tr[data-week]')) return go(`#/week/${el.dataset.week}`);
   if (el.dataset.lbf) { S.lbFilter = el.dataset.lbf; return render(); }
-  if (el.id === 'refreshLb') { await loadLb(S.route.week, true); if (S.lb[S.route.week]) S.lb[S.route.week]._fetchedAt = Date.now(); return render(); }
+  if (el.id === 'refreshLb') { const w0 = S.route.week; S.lbLoading[w0] = false; const p = loadLb(w0, true); render(); await p; if (S.lb[w0]) S.lb[w0]._fetchedAt = Date.now(); toast('Leaderboard refreshed'); return render(); }
 
   if (el.dataset.pick) {
     const key = el.dataset.pick;
@@ -762,6 +775,7 @@ document.addEventListener('click', async (e) => {
       const winner = $('#ovWinner').value.trim();
       const body = { action: 'setOverride', week: w, winner: winner ? (/^none$/i.test(winner) ? 'none' : winner) : null, frl: list($('#ovFrl').value) };
       if ($('#ovDfl')) body.dfl = list($('#ovDfl').value);
+      body.wd = list($('#ovWd').value) || 'none';
       return adm(body, 'Overrides saved');
     }
     case 'refreshEspn': await adm({ action: 'refreshResults', week: w }); await loadLb(w, true); await loadAll(); render(); return toast('Pulled fresh from ESPN');

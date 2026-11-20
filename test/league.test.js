@@ -179,3 +179,37 @@ test('multi-course weeks have no FRL and carry the pot unchanged', () => {
   assert.equal(L.frlActive(amex, { frl: 'on' }), true);
   assert.equal(L.frlActive(phx, { frl: 'off' }), false);
 });
+
+test('WD detection: ESPN flag, score text, and no-round-1 fallback', () => {
+  const ls = (n, toPar) => ({ period: 1, value: 72 + toPar, displayValue: L.fmtToPar(toPar), linescores: Array.from({ length: n }, (_, i) => ({ period: i + 1, value: 4 })) });
+  const c = (id, name, extra) => ({ id, sortOrder: Number(id), athlete: { id, displayName: name }, score: '-3', linescores: [ls(18, -3), { period: 2, value: 34, displayValue: '-1', linescores: Array.from({ length: 9 }, (_, i) => ({ period: i + 1, value: 4 })) }], ...extra });
+  const ev = { id: '1', name: 'RSM', competitions: [{ status: { period: 2, type: { state: 'in' } }, competitors: [
+    c('1', 'Leader Guy', {}),
+    { id: '2', sortOrder: 2, athlete: { id: '2', displayName: 'Cameron Champ' }, score: 'E', linescores: [] },             // screenshot case
+    c('3', 'Flagged Out', { status: { type: { name: 'STATUS_WITHDRAWN' } } }),
+    c('4', 'Score Says WD', { score: 'WD' }),
+    c('5', 'Second Guy', {}),
+    { id: '6', sortOrder: 6, athlete: { id: '6', displayName: 'Late Starter' }, score: 'E', linescores: [{ period: 1, value: 0, displayValue: '-', teeTime: '2026-11-20T18:00:00Z', linescores: [] }] },
+  ] }] };
+  const n = L.normalizeEspnEvent(ev);
+  const by = Object.fromEntries(n.players.map((p) => [p.name, p]));
+  assert.equal(by['Cameron Champ'].status, 'wd');
+  assert.equal(by['Cameron Champ'].pos, 'WD');
+  assert.equal(by['Cameron Champ'].toPar, null);
+  assert.equal(by['Flagged Out'].status, 'wd');
+  assert.equal(by['Score Says WD'].status, 'wd');
+  assert.equal(by['Late Starter'].status, 'active'); // has a tee time: suspended/late, not WD
+  assert.equal(by['Leader Guy'].status, 'active');
+  assert.deepEqual(n.players.slice(-3).map((p) => p.status), ['wd', 'wd', 'wd']); // sorted to the bottom
+  // MMGW ignores WDs
+  const picks = ['Leader Guy', 'Cameron Champ', 'Flagged Out', 'Second Guy', 'Late Starter', 'Score Says WD'].map((name) => ({ golfer: { name } }));
+  const m = L.mmgwFor(picks, n, { mmgwCount: 4 });
+  assert.equal(m.cut, true); // 3 of 6 out -> can't reach 4 -> CUT
+  // Commissioner WD override
+  const patched = L.applyManualWd(n.players, ['Second Guy']);
+  const sg = patched.find((p) => p.name === 'Second Guy');
+  assert.equal(sg.status, 'wd');
+  assert.equal(sg.pos, 'WD');
+  assert.equal(patched[patched.length - 1].status, 'wd');
+  assert.equal(n.players.find((p) => p.name === 'Second Guy').status, 'active'); // original untouched
+});

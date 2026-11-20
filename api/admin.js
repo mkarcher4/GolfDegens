@@ -80,9 +80,11 @@ export default wrap(async (req, res) => {
       const cur = ((await store.get(K.week(week))) || {}).override || {};
       const norm = (v) => (v == null || v === '' ? undefined : v === 'none' ? 'none' : Array.isArray(v) ? v.filter(Boolean) : v);
       const next = { ...cur };
-      for (const k of ['winner', 'frl', 'dfl']) if (k in b) next[k] = norm(b[k]);
+      for (const k of ['winner', 'frl', 'dfl', 'wd']) if (k in b) next[k] = norm(b[k]);
+      if (next.wd === 'none') delete next.wd;
       for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
       await patchWeek(week, { override: Object.keys(next).length ? next : undefined });
+      await store.del(K.lb(week)); // recompute with the new overrides on next load
       break;
     }
 

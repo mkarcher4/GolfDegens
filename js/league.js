@@ -186,11 +186,36 @@ export function fmtToPar(n) {
 const dv = (x) => (x && typeof x === 'object' ? (x.displayValue ?? x.value) : x);
 
 function statusFlag(c) {
-  const txt = JSON.stringify(c.status || {}).replace(/MADE[_ ]?CUT/gi, '');
-  if (/(^|[^A-Z])(CUT|MC|MDF)([^A-Z]|$)/i.test(txt)) return 'cut';
-  if (/(^|[^A-Z])(WD|WITHDRAWN|DNS)([^A-Z]|$)/i.test(txt)) return 'wd';
+  // ESPN puts WD/DQ/CUT in different places depending on the event, so look at the
+  // status object, the score, and every round's display value.
+  const scoreTxt = String(dv(c.score) ?? '');
+  const roundTxt = (c.linescores || []).map((l) => l && l.displayValue).filter(Boolean).join(' ');
+  const txt = `${JSON.stringify(c.status || {})} ${scoreTxt} ${roundTxt}`.replace(/MADE[_ ]?CUT/gi, '');
+  if (/(^|[^A-Z])(WD|WITHDRAWN|WITHDREW|DNS|DID_NOT_START)([^A-Z]|$)/i.test(txt)) return 'wd';
   if (/(^|[^A-Z])(DQ|DISQUALIFIED)([^A-Z]|$)/i.test(txt)) return 'dq';
+  if (/(^|[^A-Z])(CUT|MC|MDF)([^A-Z]|$)/i.test(txt)) return 'cut';
   return 'active';
+}
+
+const STATUS_RANK = { active: 0, cut: 1, wd: 2, dq: 3 };
+const byStatusThenOrder = (a, b) => (STATUS_RANK[a.status] - STATUS_RANK[b.status]) || (a.order - b.order);
+
+function markOut(p, status) {
+  p.status = status;
+  p.today = null;
+  p.todayStr = '–';
+  p.thru = status.toUpperCase();
+  p.pos = status.toUpperCase();
+  p.posNum = 900 + STATUS_RANK[status];
+  if (!p.rounds.some((r) => r && r.started)) p.toPar = null;
+  return p;
+}
+
+// Commissioner-marked withdrawals (names), applied on top of ESPN.
+export function applyManualWd(players, names) {
+  const keys = new Set((names || []).map(nameKey));
+  if (!keys.size || !players) return players;
+  return players.map((p) => (keys.has(p.key) && p.status === 'active' ? markOut({ ...p, rounds: p.rounds }, 'wd') : p)).sort(byStatusThenOrder);
 }
 
 function readRounds(c) {
@@ -242,6 +267,15 @@ export function normalizeEspnEvent(ev) {
   });
   players.sort((a, b) => a.order - b.order);
 
+  // Fallback WD detection: once round 2 is under way, a golfer with no round-1 score
+  // (and no tee time) never played — ESPN shows these as WD.
+  if ((state === 'in' || state === 'post') && period >= 2) {
+    for (const p of players) {
+      if (p.status === 'active' && !p.rounds[0].started && !p.rounds[0].teeTime && !p.teeTime && !p.rounds.some((r) => r.started)) p.status = 'wd';
+    }
+  }
+  for (const p of players) if (p.status !== 'active' && !p.rounds.some((r) => r.started)) p.toPar = null;
+
   // Fallback cut detection when ESPN gives no status: in round 3+, players ranked below
   // everyone who has round-3+ data (ESPN sorts missed cuts to the bottom) missed the cut.
   if (period >= 3) {
@@ -285,6 +319,8 @@ export function normalizeEspnEvent(ev) {
     p.posNum = better + 1;
     p.pos = p.espnPos && p.espnPos !== '-' ? p.espnPos : `${tie ? 'T' : ''}${better + 1}`;
   }
+
+  players.sort(byStatusThenOrder);
 
   return {
     id: String(ev.id || ''),

@@ -235,3 +235,7 @@ dialog::backdrop { background: rgba(10,31,60,.55); }
 .pick-edit td { font-size: 14px; padding: 5px 8px; }
 .pick-input { width: 100%; min-width: 140px; height: 32px; border: 1px solid var(--line); border-radius: 8px; padding: 0 9px; background: #fff; }
 .pick-input:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+.out-score { background: #F1F2F4; color: var(--ink-3); font-weight: 700; }
+.refresh-ctl { display: flex; align-items: center; gap: 8px; font-size: 12.5px; white-space: nowrap; }
+.refresh-ctl button { border: 1px solid var(--line); background: #fff; color: var(--blue); font-weight: 700; font-size: 12.5px; padding: 4px 10px; border-radius: 8px; }
+.refresh-ctl button:disabled { color: var(--ink-3); }

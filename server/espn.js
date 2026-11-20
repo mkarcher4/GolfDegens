@@ -21,7 +21,7 @@ export async function fetchEspnEvent(t, rec) {
     const { mockScoreboard } = await import('../scripts/mock-espn.js');
     const stage = process.env.MOCK_ESPN;
     if (t.week !== Number(process.env.MOCK_WEEK || 1)) return null;
-    return L.matchEspnEvent(mockScoreboard({ stage, name: t.name, frlTie: !!process.env.MOCK_FRL_TIE }).events, t.name);
+    return L.matchEspnEvent(mockScoreboard({ stage, name: t.name, frlTie: !!process.env.MOCK_FRL_TIE, wd: !!process.env.MOCK_WD }).events, t.name);
   }
   const wantId = rec && rec.espnEventId ? String(rec.espnEventId) : null;
   const pickFrom = (data) => {

@@ -22,7 +22,7 @@ function rng(seed) {
 const PAR = 72;
 const fmt = (n) => (n === 0 ? 'E' : n > 0 ? `+${n}` : String(n));
 
-export function mockScoreboard({ stage = 'r3', seed = 7, name = 'The American Express', withStatus = true, frlTie = false } = {}) {
+export function mockScoreboard({ stage = 'r3', seed = 7, name = 'The American Express', withStatus = true, frlTie = false, wd = false } = {}) {
   const r = rng(seed);
   const period = { pre: 1, r1: 1, r2: 2, r3: 3, final: 4 }[stage];
   const state = stage === 'pre' ? 'pre' : stage === 'final' ? 'post' : 'in';
@@ -101,6 +101,14 @@ export function mockScoreboard({ stage = 'r3', seed = 7, name = 'The American Ex
     }
     return out;
   });
+
+  // Two withdrawals that look the way ESPN showed them at the RSM: score "E", no rounds, no status.
+  if (wd && period >= 2) {
+    for (const nm of ['Tom Kim', 'Davis Thompson']) {
+      const c = competitors.find((x) => x.athlete.displayName === nm);
+      if (c) { c.score = 'E'; c.linescores = []; delete c.status; }
+    }
+  }
 
   return {
     events: [
